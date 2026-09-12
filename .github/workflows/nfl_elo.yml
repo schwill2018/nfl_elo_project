@@ -1,0 +1,53 @@
+name: Update NFL Elo
+
+on:
+  # Daily at 12:17 UTC: 7:17 a.m. Dallas daylight time / 6:17 a.m. standard time.
+  schedule:
+    - cron: "17 12 * * *"
+  # Also enables the Run workflow button on GitHub's Actions tab.
+  workflow_dispatch:
+
+# Allow this job to save the generated CSVs back to its repository.
+permissions:
+  contents: write
+
+# Prevent two runs from updating the same files simultaneously.
+concurrency:
+  group: nfl-elo-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download the project and saved seasonal parameters
+        uses: actions/checkout@v7
+        with:
+          # Both scheduled and manual runs use the repository's main/default branch.
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install the required Python libraries
+        run: python -m pip install -r requirements.txt
+
+      - name: Update ratings and projections
+        run: python -u nfl_elo.py
+
+      - name: Save updated CSVs and seasonal parameters to GitHub
+        env:
+          OUTPUT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add elo_parameters.csv current_elo_rankings.csv daily_projections.csv weekly_projections.csv future_projections.csv nfl_elo_history.csv
+          if git diff --cached --quiet; then
+            echo "No output changes to save."
+            exit 0
+          fi
+          git commit -m "Update NFL Elo outputs"
+          git push origin "HEAD:$OUTPUT_BRANCH"

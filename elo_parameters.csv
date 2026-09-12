@@ -1,0 +1,5 @@
+eval_year,train_start,train_end,param_tune_start,param_tune_end,param_tune_n,param_tune_window,K_best,home_adv_best,carry_best,mov_scale,use_mov,use_home_adv,use_carry_grid,logloss
+2023,2018,2022,2018,2022,5,,49.0,28.0,0.65,2.2117411412965566,True,True,True,0.6359115376783843
+2024,2018,2023,2018,2023,6,,44.0,31.0,0.65,2.2113884594003403,True,True,True,0.6399325817047777
+2025,2018,2024,2018,2024,7,,44.0,31.0,0.65,2.212730241263391,True,True,True,0.6351360409393823
+2026,2018,2025,2018,2025,8,,49.0,31.0,0.65,2.2097757890147944,True,True,True,0.6347828893264114
