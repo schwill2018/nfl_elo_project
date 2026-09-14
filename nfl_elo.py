@@ -424,7 +424,7 @@ def main():
     future_projections["p_away"] = 1 - future_projections["p_home"]
     future_projections["as_of_date"] = as_of_date
     future_projections = future_projections[
-        ["as_of_date", "week", "gameday", "gametime", "away_team", "home_team",
+        ["as_of_date", "week", "game_id", "gameday", "gametime", "away_team", "home_team",
          "away_rank", "home_rank", "away_elo", "home_elo", "p_away", "p_home"]
     ].sort_values(["gameday", "gametime"]).reset_index(drop=True)
     daily_projections = future_projections[
@@ -437,6 +437,44 @@ def main():
         weekly_projections = future_projections[
             future_projections["week"] == current_week
         ].reset_index(drop=True)
+
+    # NFL week numbers, not calendar weeks; empty files still retain their headers.
+    weekly_projections = future_projections.iloc[:0].copy()
+    
+    if not future_projections.empty:
+        current_week = future_projections.iloc[0]["week"]
+    
+        weekly_projections = future_projections[
+            future_projections["week"] == current_week
+        ].reset_index(drop=True)
+
+
+    # --- Preserve latest pregame prediction for each game ---
+    history_path = output_dir / "historical_predictions.csv"
+    
+    current_predictions = future_projections.copy()
+    
+    current_predictions["prediction_timestamp"] = pd.Timestamp.now(
+        tz="America/Chicago"
+    ).isoformat()
+    
+    if history_path.exists():
+        prediction_history = pd.read_csv(
+            history_path,
+            float_precision="round_trip"
+        )
+    
+        prediction_history = prediction_history[
+            ~prediction_history["game_id"].isin(current_predictions["game_id"])
+        ]
+    
+        prediction_history = pd.concat(
+            [prediction_history, current_predictions],
+            ignore_index=True
+        )
+    
+    else:
+        prediction_history = current_predictions
 
     # Retain the final notebook's performance reporting without adding more files.
     eval_games = historical_elo.query("home_score != away_score").copy()
@@ -452,13 +490,12 @@ def main():
     print("Accuracy:", accuracy_score(eval_games["actual"], eval_games["pred"]))
     print("Log Loss:", log_loss(eval_games["actual"], eval_games["p_home"], labels=[0, 1]))
 
-    outputs = {
-        "current_elo_rankings.csv": current_ratings,
-        "daily_projections.csv": daily_projections,
-        "weekly_projections.csv": weekly_projections,
-        "future_projections.csv": future_projections,
-        "nfl_elo_history.csv": historical_elo,
-    }
+    outputs = {"current_elo_rankings.csv": current_ratings,
+               "daily_projections.csv": daily_projections,
+               "weekly_projections.csv": weekly_projections,
+               "future_projections.csv": future_projections,
+               "historical_predictions.csv": prediction_history,
+               "nfl_elo_history.csv": historical_elo,}
     for filename, frame in outputs.items():
         frame.to_csv(output_dir / filename, index=False)
         print(f"Saved {filename}: {len(frame):,} rows")
