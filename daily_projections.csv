@@ -1,2 +1,1 @@
-as_of_date,week,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home
-2026-09-14,1,2026-09-14,20:15,DEN,KC,3,17,1106.4796756886465,976.4721907198189,0.6387476914437931,0.361252308556207
+as_of_date,week,game_id,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home
