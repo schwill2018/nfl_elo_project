@@ -384,7 +384,7 @@ def main():
     # NFL season comes from the schedule, not the calendar year (January playoffs).
     output_dir = Path(__file__).resolve().parent
     nfl_elo = run_expanding_k_elo(
-        all_games=elo_df, first_train_year=2005, first_eval_year=2010,
+        all_games=elo_df, first_train_year=2003, first_eval_year=2008,
         K_grid=compress_exp_grid(35, 60, n=7, curve=1),
         home_adv_grid=compress_exp_grid(20, 40, n=7, curve=1),
         scale=400, start_rating=1000, use_carry_grid=True,
