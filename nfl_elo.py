@@ -430,33 +430,20 @@ def main():
     daily_projections = future_projections[
         pd.to_datetime(future_projections["gameday"]).dt.date == as_of_date
     ].reset_index(drop=True)
-    # NFL week numbers, not calendar weeks; empty files still retain their headers.
-    weekly_projections = future_projections.iloc[:0].copy()
-    if not future_projections.empty:
-        current_week = future_projections.iloc[0]["week"]
-        weekly_projections = future_projections[
-            future_projections["week"] == current_week
-        ].reset_index(drop=True)
-
-    # NFL week numbers, not calendar weeks; empty files still retain their headers.
-    weekly_projections = future_projections.iloc[:0].copy()
-    
-    if not future_projections.empty:
-        current_week = future_projections.iloc[0]["week"]
-    
-        weekly_projections = future_projections[
-            future_projections["week"] == current_week
-        ].reset_index(drop=True)
-
-
     # --- Preserve latest pregame prediction for each game ---
     history_path = output_dir / "historical_predictions.csv"
     
-    current_predictions = future_projections.copy()
-    
-    current_predictions["prediction_timestamp"] = pd.Timestamp.now(
-        tz="America/Chicago"
-    ).isoformat()
+    run_timestamp = pd.Timestamp.now(tz="America/New_York")
+    kickoff_timestamps = pd.to_datetime(
+        future_projections["gameday"].astype(str) + " " +
+        future_projections["gametime"].astype(str),
+        errors="coerce"
+    ).dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="NaT")
+    # Missing/invalid kickoffs are ineligible too; scores do not control this cutoff.
+    current_predictions = future_projections.loc[
+        kickoff_timestamps > run_timestamp
+    ].copy()
+    current_predictions["prediction_timestamp"] = run_timestamp.isoformat()
     
     if history_path.exists():
         prediction_history = pd.read_csv(
@@ -475,6 +462,90 @@ def main():
     
     else:
         prediction_history = current_predictions
+
+    prediction_history = prediction_history.drop_duplicates("game_id", keep="last")
+
+    # Select the full NFL week from schedule results, not remaining predictions.
+    weekly_schedule = season_games[
+        season_games["season"] == current_season
+    ].copy()
+    # Require published result fields as well as scores; live scores alone are
+    # insufficient. result is the home margin and total is the combined score.
+    completed = (
+        weekly_schedule["result"].notna() & weekly_schedule["total"].notna() &
+        weekly_schedule["home_score"].notna() & weekly_schedule["away_score"].notna()
+    )
+    weekly_schedule["outcome"] = "TBD"
+    weekly_schedule.loc[completed & (weekly_schedule["result"] > 0), "outcome"] = (
+        weekly_schedule["home_team"]
+    )
+    weekly_schedule.loc[completed & (weekly_schedule["result"] < 0), "outcome"] = (
+        weekly_schedule["away_team"]
+    )
+    weekly_schedule.loc[completed & (weekly_schedule["result"] == 0), "outcome"] = "TIE"
+    unfinished_weeks = weekly_schedule.loc[~completed, "week"]
+    # After the season ends, retain its last week until a new season is available.
+    active_week = (unfinished_weeks.min() if not unfinished_weeks.empty
+                   else weekly_schedule["week"].max())
+    schedule_columns = ["week", "game_id", "gameday", "gametime", "away_team", "home_team"]
+    prediction_columns = [column for column in future_projections.columns
+                          if column not in schedule_columns]
+    # The archive above already contains current-run upcoming predictions and
+    # frozen pregame predictions. A missing archive row stays blank, never refit.
+    weekly_projections = weekly_schedule.loc[
+        weekly_schedule["week"] == active_week, schedule_columns + ["outcome"]
+    ].merge(
+        prediction_history[["game_id"] + prediction_columns],
+        on="game_id", how="left", validate="one_to_one"
+    )
+    weekly_projections = weekly_projections[
+        list(future_projections.columns) + ["outcome"]
+    ].sort_values(["gameday", "gametime", "game_id"]).reset_index(drop=True)
+
+    # Game-level inputs for interactive performance metrics on the website.
+    performance_columns = [
+        "season", "week", "game_id", "gameday", "away_team", "home_team",
+        "p_home", "actual_home_win", "evaluation_type"
+    ]
+    historical_performance = historical_elo.loc[
+        (historical_elo["season"] < current_season) &
+        historical_elo["home_score"].notna() & historical_elo["away_score"].notna() &
+        (historical_elo["home_score"] != historical_elo["away_score"]),
+        ["season", "week", "game_id", "gameday", "away_team", "home_team", "p_home",
+         "home_score", "away_score"]
+    ].copy()
+    historical_performance["actual_home_win"] = (
+        historical_performance["home_score"] > historical_performance["away_score"]
+    ).astype(int)
+    historical_performance["evaluation_type"] = "historical"
+    historical_performance = historical_performance[performance_columns]
+
+    deployed_results = weekly_schedule.loc[
+        completed & (weekly_schedule["home_score"] != weekly_schedule["away_score"]),
+        ["season", "week", "game_id", "gameday", "away_team", "home_team",
+         "home_score", "away_score"]
+    ].copy()
+    deployed_performance = deployed_results.merge(
+        prediction_history[["game_id", "p_home"]],
+        on="game_id", how="inner", validate="one_to_one"
+    )
+    deployed_performance["actual_home_win"] = (
+        deployed_performance["home_score"] > deployed_performance["away_score"]
+    ).astype(int)
+    deployed_performance["evaluation_type"] = "deployed"
+    deployed_performance = deployed_performance[performance_columns]
+
+    performance_games = pd.concat(
+        [historical_performance, deployed_performance], ignore_index=True
+    ).sort_values(["season", "week", "gameday", "game_id"]).reset_index(drop=True)
+    if performance_games.duplicated(["evaluation_type", "game_id"]).any():
+        raise ValueError("Duplicate evaluation_type + game_id in performance output.")
+    if performance_games[["p_home", "actual_home_win"]].isna().any().any():
+        raise ValueError("Missing prediction or result in performance output.")
+    if not performance_games["p_home"].between(0, 1, inclusive="both").all():
+        raise ValueError("Invalid probability in performance output.")
+    if not performance_games["actual_home_win"].isin([0, 1]).all():
+        raise ValueError("Invalid binary result in performance output.")
 
     # Retain the final notebook's performance reporting without adding more files.
     eval_games = historical_elo.query("home_score != away_score").copy()
@@ -495,6 +566,7 @@ def main():
                "weekly_projections.csv": weekly_projections,
                "future_projections.csv": future_projections,
                "historical_predictions.csv": prediction_history,
+               "performance_games.csv": performance_games,
                "nfl_elo_history.csv": historical_elo,}
     for filename, frame in outputs.items():
         frame.to_csv(output_dir / filename, index=False)
