@@ -1,2 +1,2 @@
-as_of_date,week,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home,elo_home_margin,model_home_spread
-2026-09-27,3,2026-09-27,20:20,LA,DEN,6,7,1062.6511140317882,1059.3633286175307,0.4616335996636084,0.5383664003363916,1.0036892346430533,-1.0
+as_of_date,week,game_id,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home
+2026-09-27,3,2026_03_LA_DEN,2026-09-27,20:20,LA,DEN,7,6,1083.1399646631057,1083.4782081364854,0.4550225521926008,0.5449774478073992
