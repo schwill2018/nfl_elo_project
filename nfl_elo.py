@@ -81,7 +81,7 @@ def elo_season(games, K, ratings=None, scale=400, start_rating=1000,
 
         game_home_adv = 0 if g["location"] == "Neutral" else home_adv
 
-        p = 1 / (1 + 10 ** ((Rb - Ra - home_adv) / scale))
+        p = 1 / (1 + 10 ** ((Rb - Ra - game_home_adv) / scale))
         p_home[i] = p
 
         y = nfl_home_result(
@@ -319,7 +319,7 @@ def run_expanding_k_elo(all_games, first_train_year=2012, first_eval_year=2019,
 
         games_out = res_eval["games"].copy()
         games_out["K_used"] = K_best
-        games_out["home_adv_used"] = home_adv_best
+        games_out["home_adv_used"] = np.where(games_out["location"] == "Neutral", 0, home_adv_best)
         games_out["carry_used"] = carry_best
         games_out["mov_scale_used"] = mov_scale
         games_out["use_mov"] = use_mov
@@ -387,10 +387,10 @@ def main():
     output_dir = Path(__file__).resolve().parent
     nfl_elo = run_expanding_k_elo(
         all_games=elo_df, first_train_year=2003, first_eval_year=2008,
-        K_grid=compress_exp_grid(35, 60, n=7, curve=1),
-        home_adv_grid=compress_exp_grid(20, 40, n=7, curve=1),
+        K_grid=compress_exp_grid(40, 65, n=8, curve=1),
+        home_adv_grid=compress_exp_grid(25, 65, n=8, curve=1),
         scale=400, start_rating=1000, use_carry_grid=True,
-        carryover_grid=[0.5, 0.65, 0.7],
+        carryover_grid=[0.5, 0.575, 0.65],
         param_tune_window=5, use_mov=True, use_home_adv=True,
         projection_season=current_season,
         parameter_file=output_dir / "elo_parameters.csv"
@@ -419,10 +419,8 @@ def main():
     future_projections["home_rank"] = future_projections["home_team"].map(rank_map)
     future_projections["away_rank"] = future_projections["away_team"].map(rank_map)
     # Freeze today's ratings for every remaining game; do not simulate results.
-    future_projections["p_home"] = 1 / (1 + 10 ** (
-        (future_projections["away_elo"] - future_projections["home_elo"] -
-         params["home_adv_best"]) / 400
-    ))
+    future_projections["game_home_adv"] = np.where(future_projections["location"] == "Neutral", 0, params["home_adv_best"])
+    future_projections["p_home"] = 1 / (1 + 10 ** ((future_projections["away_elo"] - future_projections["home_elo"] - future_projections["game_home_adv"]) / 400))
     future_projections["p_away"] = 1 - future_projections["p_home"]
     future_projections["as_of_date"] = as_of_date
     future_projections = future_projections[
@@ -448,19 +446,11 @@ def main():
     current_predictions["prediction_timestamp"] = run_timestamp.isoformat()
     
     if history_path.exists():
-        prediction_history = pd.read_csv(
-            history_path,
-            float_precision="round_trip"
-        )
+        prediction_history = pd.read_csv(history_path, float_precision="round_trip")
     
-        prediction_history = prediction_history[
-            ~prediction_history["game_id"].isin(current_predictions["game_id"])
-        ]
+        prediction_history = prediction_history[~prediction_history["game_id"].isin(current_predictions["game_id"])]
     
-        prediction_history = pd.concat(
-            [prediction_history, current_predictions],
-            ignore_index=True
-        )
+        prediction_history = pd.concat([prediction_history, current_predictions], ignore_index=True)
     
     else:
         prediction_history = current_predictions
@@ -473,19 +463,13 @@ def main():
     ].copy()
     # Require published result fields as well as scores; live scores alone are
     # insufficient. result is the home margin and total is the combined score.
-    completed = (
-        weekly_schedule["result"].notna() & weekly_schedule["total"].notna() &
-        weekly_schedule["home_score"].notna() & weekly_schedule["away_score"].notna()
-    )
+    completed = (weekly_schedule["result"].notna() & weekly_schedule["total"].notna() & weekly_schedule["home_score"].notna() & weekly_schedule["away_score"].notna())
     weekly_schedule["outcome"] = "TBD"
-    weekly_schedule.loc[completed & (weekly_schedule["result"] > 0), "outcome"] = (
-        weekly_schedule["home_team"]
-    )
-    weekly_schedule.loc[completed & (weekly_schedule["result"] < 0), "outcome"] = (
-        weekly_schedule["away_team"]
-    )
+    weekly_schedule.loc[completed & (weekly_schedule["result"] > 0), "outcome"] = (weekly_schedule["home_team"])
+    weekly_schedule.loc[completed & (weekly_schedule["result"] < 0), "outcome"] = (weekly_schedule["away_team"])
     weekly_schedule.loc[completed & (weekly_schedule["result"] == 0), "outcome"] = "TIE"
     unfinished_weeks = weekly_schedule.loc[~completed, "week"]
+
     # After the season ends, retain its last week until a new season is available.
     active_week = (unfinished_weeks.min() if not unfinished_weeks.empty
                    else weekly_schedule["week"].max())
@@ -494,21 +478,15 @@ def main():
                           if column not in schedule_columns]
     # The archive above already contains current-run upcoming predictions and
     # frozen pregame predictions. A missing archive row stays blank, never refit.
-    weekly_projections = weekly_schedule.loc[
-        weekly_schedule["week"] == active_week, schedule_columns + ["outcome"]
-    ].merge(
+    weekly_projections = weekly_schedule.loc[weekly_schedule["week"] == active_week, schedule_columns + ["outcome"]].merge(
         prediction_history[["game_id"] + prediction_columns],
-        on="game_id", how="left", validate="one_to_one"
-    )
+        on="game_id", how="left", validate="one_to_one")
     weekly_projections = weekly_projections[
         list(future_projections.columns) + ["outcome"]
     ].sort_values(["gameday", "gametime", "game_id"]).reset_index(drop=True)
 
     # Game-level inputs for interactive performance metrics on the website.
-    performance_columns = [
-        "season", "week", "game_id", "gameday", "away_team", "home_team",
-        "p_home", "actual_home_win", "evaluation_type"
-    ]
+    performance_columns = ["season", "week", "game_id", "gameday", "away_team", "home_team", "p_home", "actual_home_win", "evaluation_type"]
     historical_performance = historical_elo.loc[
         (historical_elo["season"] < current_season) &
         historical_elo["home_score"].notna() & historical_elo["away_score"].notna() &
@@ -516,9 +494,7 @@ def main():
         ["season", "week", "game_id", "gameday", "away_team", "home_team", "p_home",
          "home_score", "away_score"]
     ].copy()
-    historical_performance["actual_home_win"] = (
-        historical_performance["home_score"] > historical_performance["away_score"]
-    ).astype(int)
+    historical_performance["actual_home_win"] = (historical_performance["home_score"] > historical_performance["away_score"]).astype(int)
     historical_performance["evaluation_type"] = "historical"
     historical_performance = historical_performance[performance_columns]
 
@@ -531,9 +507,7 @@ def main():
         prediction_history[["game_id", "p_home"]],
         on="game_id", how="inner", validate="one_to_one"
     )
-    deployed_performance["actual_home_win"] = (
-        deployed_performance["home_score"] > deployed_performance["away_score"]
-    ).astype(int)
+    deployed_performance["actual_home_win"] = (deployed_performance["home_score"] > deployed_performance["away_score"]).astype(int)
     deployed_performance["evaluation_type"] = "deployed"
     deployed_performance = deployed_performance[performance_columns]
 
