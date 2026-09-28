@@ -79,6 +79,8 @@ def elo_season(games, K, ratings=None, scale=400, start_rating=1000,
         elo_home_pre[i] = Ra
         elo_away_pre[i] = Rb
 
+        game_home_adv = 0 if g["location"] == "Neutral" else home_adv
+
         p = 1 / (1 + 10 ** ((Rb - Ra - home_adv) / scale))
         p_home[i] = p
 
@@ -93,11 +95,11 @@ def elo_season(games, K, ratings=None, scale=400, start_rating=1000,
 
         point_diff = abs(g["home_score"] - g["away_score"])
         if g["home_score"] > g["away_score"]:
-          winner_elo_diff = (Ra + home_adv) - Rb
+            winner_elo_diff = (Ra + game_home_adv) - Rb
         elif g["home_score"] < g["away_score"]:
-          winner_elo_diff = Rb - (Ra + home_adv)
+            winner_elo_diff = Rb - (Ra + game_home_adv)
         else:
-          winner_elo_diff = 0
+            winner_elo_diff = 0
 
         if not use_mov:
           mov_mult = 1
