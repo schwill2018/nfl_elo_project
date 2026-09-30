@@ -1,9 +1,9 @@
 name: Update NFL Elo
 
 on:
-  # Daily at 12:17 UTC: 7:17 a.m. Dallas daylight time / 6:17 a.m. standard time.
+  # Daily at 08:00 UTC: 3:00 a.m. Dallas daylight time / 2:00 a.m. standard time.
   schedule:
-    - cron: "17 12 * * *"
+    - cron: "0 9 * * *"
   # Also enables the Run workflow button on GitHub's Actions tab.
   workflow_dispatch:
 
