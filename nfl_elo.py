@@ -10,8 +10,7 @@ prior seasons and the final notebook grid. Delete a season's row to retune it
 deliberately after changing model settings or correcting historical data.
 Model choices, tuning grids, sorting, overtime coding and MOV formula are
 preserved. Historical output begins in 2023; training begins in 2018.
-Current ratings come directly from the final fit (the notebook's separate
-rankings replay incorrectly begins in 1999 instead of 2018).
+Current ratings come directly from the continuous seasonal fit.
 """
 from pathlib import Path
 from itertools import product
@@ -142,9 +141,10 @@ def logloss(p, y, eps=1e-12):
 
 def score_elo_params(all_games, seasons_tune, K, home_adv,
                      use_mov=True, mov_scale=1, use_home_adv=True,
-                     scale=400, start_rating=1000, carry=0.6):
+                     scale=400, start_rating=1000, carry=0.6,
+                     initial_ratings=None):
 
-  ratings = {}
+  ratings = {} if initial_ratings is None else initial_ratings.copy()
   ll_vec = []
 
   if not use_home_adv:
@@ -155,6 +155,7 @@ def score_elo_params(all_games, seasons_tune, K, home_adv,
               .sort_values(["gameday", "game_id"])
               .reset_index(drop=True))
 
+      ratings = carry_over(ratings, carry=carry)
       res = elo_season(games=g_s, ratings=ratings, K=K, scale=scale,
                        start_rating=start_rating, use_mov=use_mov,
                        mov_scale=mov_scale, use_home_adv=use_home_adv,
@@ -168,7 +169,7 @@ def score_elo_params(all_games, seasons_tune, K, home_adv,
             games_res.loc[non_ties, "away_score"]).astype(float).to_numpy()
 
       ll_vec.extend(logloss(p, y))
-      ratings = carry_over(res["ratings"], carry=carry)
+      ratings = res["ratings"]
 
   return np.nanmean(ll_vec)
 
@@ -177,7 +178,8 @@ def tune_elo_params(all_games, seasons_tune, K_grid, home_adv_grid,
                     use_mov=True, mov_scale=1, use_home_adv=True,
                     scale=400, start_rating=1000, carry=0.6,
                     use_carry_grid=True,
-                    carryover_grid=(0.35, 0.50, 0.65, 0.80)):
+                    carryover_grid=(0.35, 0.50, 0.65, 0.80),
+                    initial_ratings=None):
 
     if not use_home_adv:
         home_adv_grid = [0]
@@ -191,7 +193,8 @@ def tune_elo_params(all_games, seasons_tune, K_grid, home_adv_grid,
             K=K, home_adv=home_adv,
             use_mov=use_mov, mov_scale=mov_scale,
             use_home_adv=use_home_adv, scale=scale,
-            start_rating=start_rating, carry=carry_val
+            start_rating=start_rating, carry=carry_val,
+            initial_ratings=initial_ratings
         )
 
         results.append({"K": K, "home_adv": home_adv, "carry": carry_val,
@@ -244,6 +247,8 @@ def run_expanding_k_elo(all_games, first_train_year=2012, first_eval_year=2019,
 
     all_out = []
     param_out = []
+    ratings = {}
+    ratings_before_season = {}
 
     for yr in eval_years:
         train_years = [s for s in seasons if first_train_year <= s < yr]
@@ -282,7 +287,8 @@ def run_expanding_k_elo(all_games, first_train_year=2012, first_eval_year=2019,
                 use_home_adv=use_home_adv, scale=scale,
                 start_rating=start_rating, carry=carry,
                 use_carry_grid=use_carry_grid,
-                carryover_grid=carryover_grid
+                carryover_grid=carryover_grid,
+                initial_ratings=ratings_before_season.get(param_tune_years[0], {})
             )
 
             K_best = param_fit["K_best"]
@@ -290,21 +296,26 @@ def run_expanding_k_elo(all_games, first_train_year=2012, first_eval_year=2019,
             carry_best = param_fit["carry_best"] if use_carry_grid else carry
             best_logloss = param_fit["logloss"]
 
-        ratings = {}
+        # Bootstrap training history once; later seasons keep the prior final ratings.
+        if yr == eval_years[0]:
+            for s in train_years:
+                season_games = (all_games[all_games["season"] == s]
+                                .sort_values(["gameday", "gametime", "game_id"])
+                                .reset_index(drop=True))
 
-        for s in train_years:
-            season_games = (all_games[all_games["season"] == s]
-                            .sort_values(["gameday", "gametime", "game_id"])
-                            .reset_index(drop=True))
+                ratings_before_season[s] = ratings.copy()
+                ratings = carry_over(ratings, carry=carry_best)
+                res = elo_season(
+                    games=season_games, ratings=ratings, K=K_best,
+                    scale=scale, start_rating=start_rating,
+                    use_mov=use_mov, mov_scale=mov_scale,
+                    use_home_adv=use_home_adv, home_adv=home_adv_best
+                )
 
-            res = elo_season(
-                games=season_games, ratings=ratings, K=K_best,
-                scale=scale, start_rating=start_rating,
-                use_mov=use_mov, mov_scale=mov_scale,
-                use_home_adv=use_home_adv, home_adv=home_adv_best
-            )
+                ratings = res["ratings"]
 
-            ratings = carry_over(res["ratings"], carry=carry_best)
+        ratings_before_season[yr] = ratings.copy()
+        ratings = carry_over(ratings, carry=carry_best)
 
         eval_games = (all_games[all_games["season"] == yr]
                       .sort_values(["gameday", "gametime", "game_id"])
@@ -317,6 +328,7 @@ def run_expanding_k_elo(all_games, first_train_year=2012, first_eval_year=2019,
             use_home_adv=use_home_adv, home_adv=home_adv_best
         )
 
+        ratings = res_eval["ratings"]
         games_out = res_eval["games"].copy()
         games_out["K_used"] = K_best
         games_out["home_adv_used"] = np.where(games_out["location"] == "Neutral", 0, home_adv_best)
