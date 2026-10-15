@@ -1,0 +1,122 @@
+{
+  "source_url": "https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv",
+  "evaluation_snapshot": "nfl_elo_history.csv (not refreshed from the network)",
+  "latest_game_date": "2026-10-12",
+  "games": 6311,
+  "tuning_window": 5,
+  "candidates": 192,
+  "production_hashes_before_and_after": {
+    "nfl_elo.py": "2e4a3c5e65ff583275adfc77f46480870d0ad1147a575dccbc989a34b703d5a6",
+    "current_elo_rankings.csv": "d9c89c9d3440db52ebf7c4ef540c10b72b523720d53330a0e3e94a45aeb64fea",
+    "daily_projections.csv": "1e0051ee4f36cc3708078076ade13aef2e9fe36aed5dfe1685f5c2f31cd030ba",
+    "elo_parameters.csv": "b156efe3204fd1e31b499d6cacebed1dc55d00247dd6aba345a267728f632d25",
+    "future_projections.csv": "d9c16ffb59ef6c434835c83ef14ace4bd4da4ffc96771d7d877f8e7a6afe694e",
+    "historical_predictions.csv": "06ca06a457c9e8071f533f0606be9cbd08b2eff872fa787f0c344add670c759f",
+    "nfl_elo_history.csv": "2f599fb38c780e88877aff5c902206ae60386f20fe17acfc8fa1e84222fb5227",
+    "performance_games.csv": "2394223b7dbdca73f5b84744aa1fd14d09ec823c0628a1d8a0eef57325030f0e",
+    "weekly_projections.csv": "fd5e05fd27fb22a2356e4d3956bd172771655114503eba76698b076dee2c919b"
+  },
+  "baseline_max_absolute_errors": {
+    "elo_home_pre": 4.547473508864641e-13,
+    "elo_away_pre": 4.547473508864641e-13,
+    "elo_home_post": 4.547473508864641e-13,
+    "elo_away_post": 4.547473508864641e-13,
+    "p_home": 7.216449660063518e-16
+  },
+  "reference_score_checks": [
+    {
+      "year": 2008,
+      "window": null,
+      "candidate": 0,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2008,
+      "window": null,
+      "candidate": 96,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2008,
+      "window": null,
+      "candidate": 191,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2008,
+      "window": 5,
+      "candidate": 0,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2008,
+      "window": 5,
+      "candidate": 96,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2008,
+      "window": 5,
+      "candidate": 191,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2026,
+      "window": null,
+      "candidate": 0,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2026,
+      "window": null,
+      "candidate": 96,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2026,
+      "window": null,
+      "candidate": 191,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2026,
+      "window": 5,
+      "candidate": 0,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2026,
+      "window": 5,
+      "candidate": 96,
+      "absolute_error": 0.0
+    },
+    {
+      "year": 2026,
+      "window": 5,
+      "candidate": 191,
+      "absolute_error": 0.0
+    }
+  ],
+  "completed_seasons": [
+    2008,
+    2009,
+    2010,
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "partial_season": 2026,
+  "caveat": "Exploratory retrospective comparison; historical seasons have already informed model development."
+}

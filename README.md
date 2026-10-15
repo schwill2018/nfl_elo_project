@@ -33,6 +33,25 @@ mov_scale = 2.209776
 
 Those values are reused throughout 2026. When a new season appears without a saved parameter row, the script tunes it once using prior seasons and saves the result in `elo_parameters.csv`.
 
+## Spread projections
+
+The spread calculation follows the pandas/NumPy implementation in `NFL_elo_v3.ipynb`, using RMSE as the fitting objective. For each evaluation season, it fits one multiplier using pregame Elo probabilities and actual scoring margins from the five preceding seasons. The 2026 multiplier uses 2021–2025 only and stays fixed throughout 2026.
+
+`spread_parameters.csv` records the multiplier, training years, number of games, last training game, training RMSE, and fit timestamp. The initial local setup supplies this file. Daily local and GitHub Actions runs reuse saved rows without calling the spread optimizer or rewriting the cache. A missing season is fitted once and appended. Actions saves the cache alongside the existing Elo parameters.
+
+The notebook's conversion is unchanged:
+
+```python
+elo_home_margin = spread_slope * np.log(p_home / (1 - p_home))
+model_home_spread = -(np.round(elo_home_margin * 2) / 2)
+```
+
+`model_home_spread` appears immediately after `p_home` in the projection CSVs and before `outcome` in the weekly CSV. A negative value favors the home team; a positive value favors the away team. The corresponding away spread is its negative. Probabilities already account for neutral venues before being converted to points.
+
+New pregame spreads are saved with the existing prediction archive and freeze at kickoff. Older archived predictions without a recorded spread retain blank spread values.
+
+Saved seasons are never silently refitted. To deliberately refit a season, back up `spread_parameters.csv` and remove that season's row before running. Changing the training window or fitting objective requires an explicit cache rebuild; incompatible saved settings raise an error.
+
 ## Performance
 
 Current prospective evaluation output:
@@ -64,6 +83,17 @@ The script downloads the current schedule/results data, updates Elo, prints the 
 | `weekly_projections.csv` | Projections for the current/upcoming NFL week. |
 | `future_projections.csv` | Projections for every remaining scheduled game using current ratings. |
 | `elo_parameters.csv` | Saved season-specific tuning selections. |
+| `spread_parameters.csv` | Saved season-specific RMSE spread multipliers using five prior seasons. |
+| `historical_predictions.csv` | Latest recorded pregame probabilities and spreads, frozen after kickoff. |
+| `performance_games.csv` | Game-level probability evaluation inputs for the website. |
+
+## Verification
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The spread checks cover prior-season training, cached runs with no optimizer calls, new-season appends, incompatible caches, neutral venues, CSV column order, and preservation of frozen pregame records. They use temporary output folders without refreshing production CSVs.
 
 ## References
 

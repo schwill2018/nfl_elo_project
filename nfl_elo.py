@@ -1,15 +1,17 @@
 """NFL Elo: standalone version of NFL_elo(4).ipynb, final fit in cell 38.
 
-Install once: python -m pip install numpy pandas nflreadpy pyarrow scikit-learn tzdata
+Install once: python -m pip install -r requirements.txt
 Run:          python nfl_elo.py
 
-Writes five CSVs beside this script, replacing the previous run's outputs.
+Writes projection, ranking, and historical CSVs beside this script.
 Keeps seasonal tuning selections in elo_parameters.csv beside this script.
+Keeps five-season RMSE spread fits in spread_parameters.csv. Saved spread
+multipliers are frozen by season; only missing seasons are fitted.
 Existing seasons reuse their saved parameters; missing seasons tune once using
 prior seasons and the final notebook grid. Delete a season's row to retune it
 deliberately after changing model settings or correcting historical data.
 Model choices, tuning grids, sorting, overtime coding and MOV formula are
-preserved. Historical output begins in 2023; training begins in 2018.
+preserved. Historical output begins in 2008; training begins in 2003.
 Current ratings come directly from the continuous seasonal fit.
 """
 from pathlib import Path
@@ -18,6 +20,7 @@ from itertools import product
 import numpy as np
 import pandas as pd
 import nflreadpy as nfl
+from scipy.optimize import minimize_scalar
 from sklearn.metrics import accuracy_score, log_loss
 
 
@@ -378,6 +381,107 @@ def run_expanding_k_elo(all_games, first_train_year=2012, first_eval_year=2019,
     }
 
 
+def fit_spread_params(all_games, projection_season, training_window=5,
+                      parameter_file=None):
+    if training_window < 1 or int(training_window) != training_window:
+        raise ValueError("The spread training window must be a positive whole number.")
+    training_window = int(training_window)
+
+    spread_games = all_games.dropna(subset=["home_score", "away_score", "p_home"]).copy()
+    if spread_games.empty:
+        raise ValueError("No completed Elo games available for the spread fit.")
+    if spread_games["game_id"].duplicated().any():
+        raise ValueError("Duplicate game IDs in the spread training history.")
+    if not np.isfinite(spread_games[["home_score", "away_score", "p_home"]]).all().all():
+        raise ValueError("Non-finite scores or probabilities in the spread training history.")
+    if not spread_games["p_home"].between(0, 1).all():
+        raise ValueError("Invalid probabilities in the spread training history.")
+
+    spread_games = spread_games.sort_values(
+        ["season", "gameday", "gametime", "game_id"]
+    ).reset_index(drop=True)
+    spread_games["home_margin"] = spread_games["home_score"] - spread_games["away_score"]
+    p = spread_games["p_home"].clip(1e-6, 1 - 1e-6)
+    spread_games["logit_p_home"] = np.log(p / (1 - p))
+
+    saved_params = pd.DataFrame()
+    if parameter_file is not None:
+        parameter_file = Path(parameter_file)
+        if parameter_file.exists():
+            saved_params = pd.read_csv(parameter_file, float_precision="round_trip")
+            required_columns = ["eval_year", "train_start", "train_end", "train_games",
+                                "train_last_game", "training_window", "fit_loss",
+                                "spread_slope", "train_rmse", "fitted_at"]
+            if not set(required_columns).issubset(saved_params.columns):
+                raise ValueError("spread_parameters.csv is missing required columns.")
+            if saved_params[required_columns].isna().any().any():
+                raise ValueError("Missing values in spread_parameters.csv.")
+            if saved_params["eval_year"].duplicated().any():
+                raise ValueError("spread_parameters.csv has duplicate season rows.")
+            numeric_columns = ["eval_year", "train_start", "train_end", "train_games",
+                               "training_window", "spread_slope", "train_rmse"]
+            if not np.isfinite(saved_params[numeric_columns]).all().all():
+                raise ValueError("Non-finite values in spread_parameters.csv.")
+            if not ((saved_params["fit_loss"] == "RMSE") &
+                    (saved_params["training_window"] == training_window) &
+                    (saved_params["train_start"] == saved_params["eval_year"] - training_window) &
+                    (saved_params["train_end"] == saved_params["eval_year"] - 1)).all():
+                raise ValueError("Saved spread settings do not match the prior-season RMSE window; rebuild explicitly.")
+            if not (saved_params["spread_slope"].between(0, 20) &
+                    (saved_params["train_games"] > 0) &
+                    (saved_params["train_rmse"] >= 0)).all():
+                raise ValueError("Invalid fitted values in spread_parameters.csv.")
+            saved_params = saved_params.set_index("eval_year")
+
+    spread_seasons = sorted(spread_games["season"].unique())
+    first_eval_year = int(spread_seasons[0]) + training_window
+    if projection_season < first_eval_year:
+        raise ValueError("Not enough prior seasons for the projection season's spread fit.")
+    eval_years = sorted(set(
+        [int(year) for year in spread_seasons if first_eval_year <= year <= projection_season]
+        + [int(projection_season)]
+    ))
+    param_out = []
+
+    for eval_year in eval_years:
+        if eval_year in saved_params.index:
+            print(f"Using saved spread multiplier for NFL season {eval_year}.", flush=True)
+            continue
+
+        train_seasons = list(range(eval_year - training_window, eval_year))
+        train = spread_games[spread_games["season"].isin(train_seasons)].copy()
+        if sorted(train["season"].unique()) != train_seasons:
+            raise ValueError(f"Missing prior seasons for the {eval_year} spread fit.")
+
+        print(f"Fitting {eval_year} RMSE spread multiplier on {train_seasons[0]}-{train_seasons[-1]}.", flush=True)
+        spread_opt = minimize_scalar(
+            lambda slope: np.sqrt(np.mean(
+                (train["home_margin"] - slope * train["logit_p_home"]) ** 2
+            )),
+            bounds=(0, 20),
+            method="bounded"
+        )
+        if not spread_opt.success or not np.isfinite(spread_opt.fun):
+            raise ValueError(f"The {eval_year} spread fit did not converge.")
+
+        param_out.append({
+            "eval_year": eval_year,
+            "train_start": train_seasons[0], "train_end": train_seasons[-1],
+            "train_games": len(train), "train_last_game": train["gameday"].max(),
+            "training_window": training_window, "fit_loss": "RMSE",
+            "spread_slope": spread_opt.x, "train_rmse": spread_opt.fun,
+            "fitted_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        })
+
+    parameters = pd.concat([saved_params.reset_index(), pd.DataFrame(param_out)],
+                           ignore_index=True) if not saved_params.empty else pd.DataFrame(param_out)
+    parameters = parameters.sort_values("eval_year").reset_index(drop=True)
+    # A normal cached run leaves the file unchanged. Append only new seasons.
+    if parameter_file is not None and param_out:
+        parameters.to_csv(parameter_file, index=False)
+    return parameters
+
+
 def main():
     # A new download each run; don't reuse nflreadpy's previously cached data.
     nfl.clear_cache()
@@ -409,6 +513,11 @@ def main():
     )
 
     historical_elo = nfl_elo["games"]
+    spread_parameters = fit_spread_params(
+        all_games=historical_elo, projection_season=current_season,
+        training_window=5, parameter_file=output_dir / "spread_parameters.csv"
+    )
+    spread_slope = spread_parameters.set_index("eval_year").loc[current_season, "spread_slope"]
     params = nfl_elo["K_by_year"].set_index("eval_year").loc[current_season]
     ratings = nfl_elo["ratings"]
     current_teams = pd.unique(games.loc[
@@ -434,10 +543,13 @@ def main():
     future_projections["game_home_adv"] = np.where(future_projections["location"] == "Neutral", 0, params["home_adv_best"])
     future_projections["p_home"] = 1 / (1 + 10 ** ((future_projections["away_elo"] - future_projections["home_elo"] - future_projections["game_home_adv"]) / 400))
     future_projections["p_away"] = 1 - future_projections["p_home"]
+    projection_p = future_projections["p_home"].clip(1e-6, 1 - 1e-6)
+    future_projections["elo_home_margin"] = spread_slope * np.log(projection_p / (1 - projection_p))
+    future_projections["model_home_spread"] = -(np.round(future_projections["elo_home_margin"] * 2) / 2)
     future_projections["as_of_date"] = as_of_date
     future_projections = future_projections[
         ["as_of_date", "week", "game_id", "gameday", "gametime", "away_team", "home_team",
-         "away_rank", "home_rank", "away_elo", "home_elo", "p_away", "p_home"]
+         "away_rank", "home_rank", "away_elo", "home_elo", "p_away", "p_home", "model_home_spread"]
     ].sort_values(["gameday", "gametime"]).reset_index(drop=True)
     daily_projections = future_projections[
         pd.to_datetime(future_projections["gameday"]).dt.date == as_of_date
@@ -468,6 +580,12 @@ def main():
         prediction_history = current_predictions
 
     prediction_history = prediction_history.drop_duplicates("game_id", keep="last")
+    # Old pregame records have no recorded spread. Keep those blanks, including
+    # when no upcoming prediction is available to introduce the new column.
+    prediction_history = prediction_history.reindex(
+        columns=list(future_projections.columns) + [column for column in prediction_history.columns
+                                                   if column not in future_projections.columns]
+    )
 
     # Select the full NFL week from schedule results, not remaining predictions.
     weekly_schedule = season_games[
