@@ -1,2 +1,1 @@
 as_of_date,week,game_id,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home,model_home_spread
-2026-10-26,7,2026_07_DAL_PHI,2026-10-26,20:15,DAL,PHI,23,19,932.8449509796685,978.9386117085802,0.39358348585154446,0.6064165141484555,-3.5
