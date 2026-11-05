@@ -1,1 +1,2 @@
 as_of_date,week,game_id,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home,model_home_spread
+2026-11-05,9,2026_09_JAX_BAL,2026-11-05,20:15,JAX,BAL,7,17,1107.3651931999518,984.3397997265013,0.6321040059063169,0.3678959940936831,4.0
