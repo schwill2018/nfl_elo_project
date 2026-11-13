@@ -1,2 +1,1 @@
 as_of_date,week,game_id,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home,model_home_spread
-2026-11-12,10,2026_10_WAS_NYG,2026-11-12,20:15,WAS,NYG,22,17,931.5876172405151,982.8002140214282,0.3865729333446577,0.6134270666553423,-3.5
