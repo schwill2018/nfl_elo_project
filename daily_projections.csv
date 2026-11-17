@@ -1,2 +1,1 @@
 as_of_date,week,game_id,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home,model_home_spread
-2026-11-16,10,2026_10_LAC_BAL,2026-11-16,20:15,LAC,BAL,29,19,866.6398903490681,961.9112712401691,0.3284147716947291,0.6715852283052709,-5.5
