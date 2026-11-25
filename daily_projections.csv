@@ -1,1 +1,2 @@
 as_of_date,week,game_id,gameday,gametime,away_team,home_team,away_rank,home_rank,away_elo,home_elo,p_away,p_home,model_home_spread
+2026-11-25,12,2026_12_GB_LA,2026-11-25,20:00,GB,LA,12,8,1039.4960386145294,1110.2732184445733,0.3602305538480741,0.6397694461519259,-4.5
